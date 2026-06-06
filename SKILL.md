@@ -11,9 +11,11 @@ Use this skill only for one explicitly named PDF at a time. Keep the original PD
 
 This skill now targets a faithful bilingual paper edition instead of a summary-style reading note:
 
-- `source.md` must be a source-faithful extraction of the paper body in reading order.
+- `source.md` must be a source-faithful extraction of the paper body in reading order before aggressive paragraph repair.
+- `source_reset.md` must be the reviewed reading edition derived from `source.md`, with paragraph repair, caption placement repair, and inline citation cleanup applied explicitly.
 - The extractor should prefer structured PDF layout recovery over plain markdown conversion, and should auto-detect single-column, double-column, and mixed pages.
 - `bilingual.md` must keep the extracted English text visible and follow each paragraph or logical block with the Chinese translation.
+- The paper title, author names, affiliations, and supporting-information note should remain in the original language only.
 - `bilingual.pdf` must preserve figure/table/formula order and reinsert figure regions from the original PDF when available.
 - The PDF renderer should use a restrained editorial print profile inspired by Kami's document system, but without taking an external runtime dependency on Kami itself.
 
@@ -23,9 +25,10 @@ This skill now targets a faithful bilingual paper edition instead of a summary-s
 
 1. Locate the target PDF in `D:\9-codex\reference\分类名\文献文件夹\`.
 2. Extract `source.md` directly from the PDF in reading order.
-3. Build `bilingual.md` from `source.md` as a faithful English-Chinese parallel edition.
-4. Render `bilingual.pdf` from `bilingual.md`, reinserting figure regions from the original PDF when the markdown contains figure placeholders.
-5. Keep output noise to zero.
+3. Build `source_reset.md` from `source.md` after paragraph repair and layout cleanup.
+4. Build `bilingual.md` from `source_reset.md` as a faithful English-Chinese parallel edition.
+5. Render `bilingual.pdf` from `bilingual.md`, reinserting figure regions from the original PDF when the markdown contains figure placeholders.
+6. Keep output noise to zero.
 
 See:
 
@@ -39,15 +42,16 @@ See:
 - Keep only these sibling files in the paper folder:
   - `文献文件夹名.pdf`
   - `source.md`
+  - `source_reset.md`
   - `bilingual.md`
   - `bilingual.pdf`
 - Do not create `metadata.json`, `notes.md`, `figures.md`, export folders, or helper artifacts.
 - If any generated file already exists, inspect whether the PDF or upstream markdown changed before overwriting.
-- The canonical ordering is: PDF first, then `source.md`, then `bilingual.md`, then `bilingual.pdf`.
+- The canonical ordering is: PDF first, then `source.md`, then `source_reset.md`, then `bilingual.md`, then `bilingual.pdf`.
 
 ## Bilingual Rules
 
-- Format `bilingual.md` as a faithful paragraph-level bilingual rendering of `source.md`.
+- Format `bilingual.md` as a faithful paragraph-level bilingual rendering of `source_reset.md`.
 - Keep the original extracted English text visible, followed immediately by the Chinese translation for the same paragraph or logical block.
 - Do not prefix paragraphs with `English` / `Chinese`.
 - Do not condense the paper into a summary, review note, or rewritten article.
@@ -56,10 +60,21 @@ See:
 
 ## Translation Responsibility
 
-- `process_pdf.py` does not translate content; it only extracts `source.md`, renders `bilingual.pdf`, and reinserts recoverable figure regions.
-- The agent invoking this skill is responsible for building `bilingual.md` from `source.md`.
+- `process_pdf.py` does not translate content; it extracts `source.md`, derives `source_reset.md`, renders `bilingual.pdf`, and reinserts recoverable figure regions.
+- The agent invoking this skill is responsible for building `bilingual.md` from `source_reset.md`.
 - The translation step must follow `references/translation-template.md` as the canonical prompt and behavior contract.
+- The agent should first create a scaffold through `scripts/bilingual_guard.py scaffold`, then fill the translation blocks without changing the source blocks or hidden markers.
+- The agent should then run `scripts/normalize_bilingual_terms.py` to reduce unnecessary English retention in the Chinese translation blocks before final verification and rendering.
+- Chinese translation blocks must be regenerated from the current English source blocks in the scaffold, not post-cleaned from an older Chinese draft.
+- If an earlier `bilingual.md` contains stale wording, inline citation remnants, mojibake, or summary-style paraphrase, discard those Chinese blocks and rebuild them from the current `source_reset.md`.
 - When the agent is unsure whether a damaged source block can be safely interpreted, it must preserve the English source and mark the block conservatively instead of guessing.
+
+## Source Tracking
+
+- `bilingual.md` must begin with hidden provenance metadata that records the current `source_reset.md` hash, generation time, and workflow version.
+- Each bilingual block pair should carry hidden block markers so the workflow can verify source/translation alignment.
+- If `source_reset.md` changes, the existing `bilingual.md` is stale by default and must be rebuilt.
+- `bilingual.pdf` must not be rendered from a stale or invalid `bilingual.md`.
 
 ## Figure, Table, and Formula Rules
 
@@ -83,4 +98,5 @@ See:
 - No truncation before the end of the paper body.
 - English blocks should be recognizable as source text rather than paraphrased summaries.
 - Figure, table, and formula references must remain visible and ordered.
-- Final folder contents must stay limited to the original PDF plus `source.md`, `bilingual.md`, and `bilingual.pdf`.
+- Hidden provenance and block markers must match the current `source_reset.md`.
+- Final folder contents must stay limited to the original PDF plus `source.md`, `source_reset.md`, `bilingual.md`, and `bilingual.pdf`.

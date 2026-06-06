@@ -24,8 +24,10 @@
 
 - Treat the PDF as an A4 reading document, not a slide deck.
 - Fix the type system rather than tuning per paper:
-  - Chinese title/body fonts: prefer `STSONG.TTF`, fallback `simsun.ttc`
-  - English title/body fonts: prefer `times.ttf`
+  - Chinese body font: prefer `msyh.ttc` (Microsoft YaHei)
+  - Chinese heading/caption emphasis font: prefer `msyhbd.ttc`
+  - English body font: prefer `times.ttf`
+  - English heading/caption emphasis font: prefer `timesbd.ttf`
   - Monospaced content: `Courier`
 - Keep title spacing compact and clear.
 - Keep body text in a stable reading range with moderate leading.
@@ -44,8 +46,19 @@
 - Keep the Chinese body slightly more open through font choice and leading rather than manual character-by-character tracking.
 - Fix colors to a restrained print palette:
   - Heading accent: `#1B365D`
-  - Main body ink: `#3A352E`
-  - Caption/table metadata: `#666159`
+  - Main body ink: `#2F2A24`
+  - Caption/table metadata: `#6B6459`
+- Before rendering to PDF, normalize unsupported or unstable inline symbols to PDF-safe forms:
+  - `∼ -> ~`
+  - `≈ -> ~`
+  - `≤ -> <=`
+  - `≥ -> >=`
+  - normalize Unicode dash variants to ASCII `-`
+  - remove zero-width and non-breaking spacing artifacts that can surface as empty boxes
+- Keep emphasis rules close to Kami's editorial rhythm:
+  - title and section headings use the bold heading font plus ink-blue color
+  - body text stays regular-weight
+  - captions use the emphasis font but remain smaller and lighter in color than headings
 
 ## Figures
 
