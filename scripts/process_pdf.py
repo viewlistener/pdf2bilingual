@@ -56,8 +56,8 @@ ZH_FONT_CANDIDATES = (
     ("PaperZH", r"C:\Windows\Fonts\simsun.ttc"),
 )
 ZH_BOLD_FONT_CANDIDATES = (
-    ("PaperZHBold", r"C:\Windows\Fonts\simhei.ttf"),
     ("PaperZHBold", r"C:\Windows\Fonts\msyhbd.ttc"),
+    ("PaperZHBold", r"C:\Windows\Fonts\simhei.ttf"),
     ("PaperZHBold", r"C:\Windows\Fonts\msyh.ttc"),
 )
 EN_FONT_CANDIDATES = (
@@ -125,9 +125,6 @@ IMAGE_RENDER_SCALE_BASE = 2.8
 IMAGE_RENDER_SCALE_SMALL_FIGURE = 3.4
 IMAGE_TARGET_MIN_PIXEL_WIDTH = 1500
 IMAGE_MAX_RENDER_SCALE = 4.0
-IMAGE_AFTER_SPACER = 4
-CAPTION_PAIR_SPACER = 1.2
-
 TYPOGRAPHY = {
     "title": {"size": 18.0, "leading": 22.0, "space_after": 10.0},
     "h1": {"size": 14.5, "leading": 20.0, "space_before": 8.0, "space_after": 6.0},
@@ -137,6 +134,13 @@ TYPOGRAPHY = {
     "equation_zh": {"size": 9.8, "leading": 15.0, "space_before": 2.0, "space_after": 4.2},
     "bullet_zh": {"size": 10.4, "leading": 17.2},
     "code": {"size": 8.6, "leading": 11.0, "space_before": 2.0, "space_after": 4.0},
+    "spacers": {
+        "blank_paragraph": 4.0,
+        "image_after": 4.0,
+        "caption_pair": 1.2,
+        "table_after": 5.0,
+        "translation_to_source": 4.0,
+    },
 }
 
 ExtractorMode = str
@@ -892,6 +896,14 @@ def normalize_section_markers(text: str) -> str:
         text = re.sub(rf"(?:\u25a0|\u25aa)\s*{re.escape(marker)}\b", f"\n\n{marker}", text)
     for marker in ("ASSOCIATED CONTENT", "AUTHOR INFORMATION", "ACKNOWLEDGMENTS", "NOTE ADDED IN PROOF"):
         text = re.sub(rf"(?:\u25a0|\u25aa)\s*{re.escape(marker)}\b", f"\n\n{marker}", text)
+    text = text.replace("掳C", "°C")
+    text = re.sub(r"°\s+C\b", "°C", text)
+    text = re.sub(r"(?<=\d)\s+(?=°C\b)", "", text)
+    text = re.sub(
+        r"(?<=\d)\s+(?=(?:rpm|min\.?|mins\.?|h|hr|hrs|s|sec|nm|mm|cm|mL|μL|uL|mg|g|kg|wt%|%)\b)",
+        "",
+        text,
+    )
     return text
 
 
@@ -2029,8 +2041,18 @@ PDF_SAFE_CHAR_REPLACEMENTS = (
 def sanitize_for_pdf_text(text: str) -> str:
     for old, new in PDF_SAFE_CHAR_REPLACEMENTS:
         text = text.replace(old, new)
+    degree_c = "\u00b0C"
+    micro_l = "\u03bcL"
+    text = text.replace("??", degree_c)
+    text = text.replace("?C", degree_c)
+    text = re.sub(r"\u00b0\s+C\b", degree_c, text)
+    text = re.sub(r"(?<=\d)\s+(?=\u00b0C\b)", "", text)
+    text = re.sub(
+        rf"(?<=\d)\s+(?=(?:rpm|min\.?|mins\.?|h|hr|hrs|s|sec|nm|mm|cm|mL|{micro_l}|uL|mg|g|kg|wt%|%)\b)",
+        "",
+        text,
+    )
     return text
-
 
 def inline_format(text: str) -> str:
     text = sanitize_for_pdf_text(text)
@@ -2042,7 +2064,7 @@ def inline_format(text: str) -> str:
 
 
 ASCII_SPAN_RE = re.compile(
-    r"([(\[\{,;:]?[A-Za-z0-9\u2020\u2021\u00a7*][A-Za-z0-9\u2020\u2021\u00a7*(){}\[\]/.,:%;+_=~'\"*&-]*[A-Za-z0-9\u2020\u2021\u00a7*)][)\]\},;:.]?|[A-Za-z0-9\u2020\u2021\u00a7*])"
+    r"([(\[\{,;:]?[A-Za-z0-9\u2020\u2021\u00a7*\u00b0][A-Za-z0-9\u2020\u2021\u00a7*\u00b0(){}\[\]/.,:%;+_=~'\"*&-]*[A-Za-z0-9\u2020\u2021\u00a7*\u00b0)][)\]\},;:.]?|[A-Za-z0-9\u2020\u2021\u00a7*\u00b0])"
 )
 HTML_TOKEN_RE = re.compile(r"(<[^>]+?>|&[A-Za-z0-9#]+;)")
 
@@ -2067,10 +2089,18 @@ def apply_mixed_font_markup(text: str, style: ParagraphStyle, font_names: dict[s
         return formatted
 
     english_font = font_names["en_bold"] if style.fontName == font_names["zh_bold"] else font_names["en"]
+    text_color = getattr(style, "textColor", None)
+    color_attr = ""
+    if text_color is not None:
+        color_attr = ' color="#%02X%02X%02X"' % (
+            int(round(text_color.red * 255)),
+            int(round(text_color.green * 255)),
+            int(round(text_color.blue * 255)),
+        )
 
     def repl(match: re.Match[str]) -> str:
         chunk = match.group(1)
-        return f'<font name="{english_font}">{chunk}</font>'
+        return f'<font name="{english_font}"{color_attr}>{chunk}</font>'
 
     pieces: list[str] = []
     last = 0
@@ -2224,6 +2254,18 @@ def build_story(md_text: str, original_pdf: Path, font_names: dict[str, str]):
         splitLongWords=0,
         wordWrap="CJK",
     )
+    h1_translation_zh = paragraph_style(
+        "H1TranslationZH",
+        h1_zh,
+        font_names["zh_bold"],
+        TYPOGRAPHY["h1"]["size"],
+        TYPOGRAPHY["h1"]["leading"],
+        textColor=INK_BLUE,
+        spaceBefore=0,
+        spaceAfter=TYPOGRAPHY["h1"]["space_after"] + TYPOGRAPHY["spacers"]["translation_to_source"],
+        splitLongWords=0,
+        wordWrap="CJK",
+    )
     h2_zh = paragraph_style(
         "H2ZH",
         styles["Heading2"],
@@ -2233,6 +2275,18 @@ def build_story(md_text: str, original_pdf: Path, font_names: dict[str, str]):
         textColor=INK_BLUE,
         spaceBefore=TYPOGRAPHY["h2"]["space_before"],
         spaceAfter=TYPOGRAPHY["h2"]["space_after"],
+        splitLongWords=0,
+        wordWrap="CJK",
+    )
+    h2_translation_zh = paragraph_style(
+        "H2TranslationZH",
+        h2_zh,
+        font_names["zh_bold"],
+        TYPOGRAPHY["h2"]["size"],
+        TYPOGRAPHY["h2"]["leading"],
+        textColor=INK_BLUE,
+        spaceBefore=0,
+        spaceAfter=TYPOGRAPHY["h2"]["space_after"] + TYPOGRAPHY["spacers"]["translation_to_source"],
         splitLongWords=0,
         wordWrap="CJK",
     )
@@ -2325,12 +2379,16 @@ def build_story(md_text: str, original_pdf: Path, font_names: dict[str, str]):
         spaceAfter=TYPOGRAPHY["code"]["space_after"],
     )
 
-    def style_for(role: str):
+    def style_for(role: str, block_meta: dict[str, str] | None = None):
         if role == "title":
             return title_zh
         if role == "h1":
+            if block_meta and block_meta.get("role") == "translation":
+                return h1_translation_zh
             return h1_zh
         if role == "h2":
+            if block_meta and block_meta.get("role") == "translation":
+                return h2_translation_zh
             return h2_zh
         if role == "body":
             return body_zh
@@ -2419,7 +2477,7 @@ def build_story(md_text: str, original_pdf: Path, font_names: dict[str, str]):
                 )
             )
             story.append(table)
-            story.append(Spacer(1, 5))
+            story.append(Spacer(1, TYPOGRAPHY["spacers"]["table_after"]))
         else:
             story.append(Preformatted("\n".join(table_lines), code))
         table_lines = []
@@ -2433,17 +2491,25 @@ def build_story(md_text: str, original_pdf: Path, font_names: dict[str, str]):
         if not stripped:
             return
         is_caption_block = bool(block_meta and block_meta.get("type") == "caption")
-        if stripped.startswith("# "):
+        if block_meta and block_meta.get("type") == "title":
+            style = style_for("title", block_meta)
+            title_text = f"**{stripped}**"
+            story.append(Paragraph(paragraph_markup(title_text, style), style))
+        elif stripped.startswith("# "):
             heading_text = stripped[2:].strip()
-            style = style_for("title")
+            style = style_for("title", block_meta)
             story.append(Paragraph(paragraph_markup(heading_text, style), style))
         elif stripped.startswith("## "):
             heading_text = stripped[3:].strip()
-            style = style_for("h1")
+            style = style_for("h1", block_meta)
+            if block_meta and block_meta.get("role") == "translation":
+                heading_text = f"**{heading_text}**"
             story.append(Paragraph(paragraph_markup(heading_text, style), style))
         elif stripped.startswith("### "):
             heading_text = stripped[4:].strip()
-            style = style_for("h2")
+            style = style_for("h2", block_meta)
+            if block_meta and block_meta.get("role") == "translation":
+                heading_text = f"**{heading_text}**"
             story.append(Paragraph(paragraph_markup(heading_text, style), style))
         elif re.match(r"^[-*]\s+", stripped):
             bullet_text = re.sub(r"^[-*]\s+", "", stripped)
@@ -2517,9 +2583,9 @@ def build_story(md_text: str, original_pdf: Path, font_names: dict[str, str]):
                 and next_item[1].get("type") == "caption"
                 and last_emitted_meta.get("id") == next_item[1].get("id")
             ):
-                story.append(Spacer(1, CAPTION_PAIR_SPACER))
+                story.append(Spacer(1, TYPOGRAPHY["spacers"]["caption_pair"]))
             elif last_emitted_role != "caption":
-                story.append(Spacer(1, 4))
+                story.append(Spacer(1, TYPOGRAPHY["spacers"]["blank_paragraph"]))
             continue
 
         match = IMAGE_RE.fullmatch(stripped)
@@ -2529,13 +2595,20 @@ def build_story(md_text: str, original_pdf: Path, font_names: dict[str, str]):
             page_num = int(match.group(1))
             bbox = tuple(float(match.group(i)) for i in range(2, 6))
             story.append(render_pdf_image(pdf_doc, page_num, bbox, max_image_width))
-            story.append(Spacer(1, IMAGE_AFTER_SPACER))
+            story.append(Spacer(1, TYPOGRAPHY["spacers"]["image_after"]))
             last_emitted_role = "image"
             last_emitted_meta = current_block_meta
             continue
         marker_meta = parse_block_marker(stripped)
         if marker_meta:
             flush_paragraph(current_block_meta)
+            if (
+                last_emitted_meta
+                and last_emitted_meta.get("role") == "translation"
+                and marker_meta.get("role") == "source"
+                and last_emitted_role != "caption"
+            ):
+                story.append(Spacer(1, TYPOGRAPHY["spacers"]["translation_to_source"]))
             current_block_meta = marker_meta
             continue
         if GENERIC_HTML_COMMENT_RE.fullmatch(stripped):
